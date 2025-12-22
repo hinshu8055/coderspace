@@ -121,5 +121,5 @@ app.get("*", (req, res) => {
 });
 
 server.listen(port, () => {
-  console.log("server is working on port 5000");
+  console.log("server is currently working on port 5000");
 });
