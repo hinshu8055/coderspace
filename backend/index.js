@@ -4,6 +4,12 @@ import { Server } from "socket.io";
 import path from "path";
 import axios from "axios";
 import cors from "cors";
+import fs from "fs/promises";
+import os from "os";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 const app = express();
 app.use(cors({ origin: "*" }));
@@ -82,8 +88,65 @@ io.on("connection", (socket) => {
 app.use(express.json());
 
 // Run Code Endpoint
+async function runCodeLocally(language, code) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "coderspace-"));
+  let srcFile;
+  let compileCmd;
+  let runCmd;
+
+  if (language === "cpp") {
+    srcFile = path.join(tempDir, "Main.cpp");
+    const exeFile = path.join(tempDir, process.platform === "win32" ? "Main.exe" : "Main");
+    compileCmd = `g++ -std=c++17 -O2 -o "${exeFile}" "${srcFile}"`;
+    runCmd = `"${exeFile}"`;
+  } else if (language === "python") {
+    srcFile = path.join(tempDir, "Main.py");
+    // Support both python and python3 installs.
+    runCmd = `python "${srcFile}"`;
+  } else if (language === "javascript") {
+    srcFile = path.join(tempDir, "Main.js");
+    runCmd = `node "${srcFile}"`;
+  } else if (language === "java") {
+    srcFile = path.join(tempDir, "Main.java");
+    compileCmd = `javac "${srcFile}"`;
+    runCmd = `java -cp "${tempDir}" Main`;
+  } else {
+    throw new Error("Unsupported local language");
+  }
+
+  try {
+    await fs.writeFile(srcFile, code, "utf8");
+
+    if (compileCmd) {
+      await execAsync(compileCmd, { timeout: 15000 });
+    }
+
+    const { stdout, stderr } = await execAsync(runCmd, { timeout: 15000 });
+    return (stderr || stdout || "(no output)").toString();
+  } finally {
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    } catch (cleanupErr) {
+      console.warn("Failed to clean up temp files:", cleanupErr.message);
+    }
+  }
+}
+
 app.post("/run-code", async (req, res) => {
   const { code, language } = req.body;
+
+  const localLanguages = new Set(["cpp", "python", "javascript", "java"]);
+
+  if (localLanguages.has(language)) {
+    try {
+      const output = await runCodeLocally(language, code);
+      return res.json({ output });
+    } catch (error) {
+      console.warn("Local execution failed, falling back to remote Piston if available:", error.message);
+      // Continue to fallback to remote execution.
+    }
+  }
+
   try {
     const response = await axios.post("https://emkc.org/api/v2/piston/execute", {
       language,

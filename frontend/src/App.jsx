@@ -4,7 +4,8 @@ import io from "socket.io-client";
 import Editor from "@monaco-editor/react";
 import axios from "axios";
 
-const socket = io("https://echoroom-3yjo.onrender.com");
+const API_BASE_URL = "http://localhost:5000";
+const socket = io(API_BASE_URL);
 
 
 const App = () => {
@@ -94,7 +95,7 @@ const App = () => {
   const handleRunCode = async () => {
     try {
       setOutput("Running...");
-      const resp = await axios.post("https://echoroom-3yjo.onrender.com/run-code", {
+      const resp = await axios.post(`${API_BASE_URL}/run-code`, {
         language,
         code,
       });
